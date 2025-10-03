@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  mqtt-interceptor:
+    build: .
+    container_name: mqtt-interceptor
+    restart: unless-stopped
+    
+    # Mount config directory
+    volumes:
+      - ./config:/app/config:ro
+      - ./logs:/app/logs
+    
+    # Environment variables (optional - can be set in config.yaml instead)
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=America/New_York  # Adjust to your timezone
+    
+    # Network mode - use host networking for easier MQTT broker access
+    # You can also use bridge mode and expose specific ports if needed
+    network_mode: host
+    
+    # Resource limits (adjust as needed)
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.5'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

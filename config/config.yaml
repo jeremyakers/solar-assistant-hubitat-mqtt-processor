@@ -1,0 +1,71 @@
+# MQTT Interceptor Configuration
+# Edit this file with your specific MQTT broker details and topic names
+
+mqtt:
+  source_broker:
+    host: "192.168.1.100"  # Your Solar Assistant MQTT broker IP
+    port: 1883
+    username: ""  # Leave empty if no authentication
+    password: ""  # Leave empty if no authentication
+    keepalive: 60
+
+  destination_broker:
+    host: "192.168.1.100"  # Your Hubitat/EVSE MQTT broker IP (can be same as source)
+    port: 1883
+    username: ""  # Leave empty if no authentication
+    password: ""  # Leave empty if no authentication
+    keepalive: 60
+
+topics:
+  source:
+    # Solar Assistant topics - adjust these to match your actual topic structure
+    power: "solar_assistant/inverter_1/total_power/state"
+    load: "solar_assistant/inverter_1/load_power/state"
+    voltage: "solar_assistant/battery_1/voltage/state"
+    min_cell_voltage: "solar_assistant/battery_1/min_cell_voltage/state"
+    max_cell_voltage: "solar_assistant/battery_1/max_cell_voltage/state"
+    battery_soc: "solar_assistant/battery_1/state_of_charge/state"
+    temperature: "solar_assistant/battery_1/temperature/state"
+    energy: "solar_assistant/inverter_1/daily_energy/state"
+    
+    # EV battery SoC from Hubitat (this should be published by your EV monitoring driver)
+    ev_battery_soc: "hubitat/ev_battery_soc"
+
+  destination:
+    # Where to publish aggregated data for Hubitat
+    aggregated_prefix: "solar_assistant_agg"
+    
+    # Where to publish modified load for EVSE
+    modified_load: "evse/modified_load"
+
+aggregation:
+  # How often to publish aggregated data (seconds)
+  interval_seconds: 30
+  
+  # How long to keep messages in buffer for aggregation (seconds)
+  buffer_max_age_seconds: 300
+  
+  # Whether to publish individual topic stats (min/max/avg/count for each topic)
+  # If false, only publishes combined JSON
+  publish_individual_topics: true
+
+load_modification:
+  # Enable modified load calculation and publishing
+  enabled: true
+  
+  # Publish modified load at high frequency (every load message)
+  # If false, only publishes during aggregation intervals
+  high_frequency_updates: true
+  
+  # Battery SoC thresholds for prioritization
+  ev_priority_threshold: 50      # EV battery % below which EV gets priority
+  house_priority_threshold: 50   # House battery % above which house gets priority
+  
+  # Calculation parameters (based on your Groovy logic)
+  charge_modifier_multiplier: 2.0
+  load_modifier_base: 10000.0
+  min_charge_power_offset: 11000.0
+
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
