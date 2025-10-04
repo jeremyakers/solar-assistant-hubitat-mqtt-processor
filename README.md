@@ -175,6 +175,19 @@ docker-compose logs -f mqtt-interceptor
 
 The container includes health checks that verify the Python process is running.
 
+### Algorithm Analysis and Tuning
+
+For analyzing algorithm performance and tuning charging behavior:
+
+```bash
+# Enable algorithm logging in config/config.yaml
+algorithm_logging:
+  enabled: true
+  log_every_n_calculations: 10  # Log every 10th calculation
+```
+
+This creates daily CSV files with all algorithm inputs and outputs in a single row format, perfect for Excel analysis. See [ALGORITHM_LOGGING.md](ALGORITHM_LOGGING.md) for complete details.
+
 ## Output Topics
 
 ### Aggregated Data

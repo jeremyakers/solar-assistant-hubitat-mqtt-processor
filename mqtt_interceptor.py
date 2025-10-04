@@ -10,8 +10,10 @@ aggregates them over configurable time periods, and publishes:
 Author: Jeremy Akers
 """
 
+import csv
 import json
 import logging
+import os
 import signal
 import sys
 import threading
@@ -19,6 +21,7 @@ import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Dict, List, Optional, Any
 import yaml
 
@@ -72,6 +75,135 @@ class MessageBuffer:
         return self.values[-1] if self.values else None
 
 
+class AlgorithmLogger:
+    """Simple CSV logger for algorithm inputs and outputs"""
+    
+    def __init__(self, config: Dict):
+        self.enabled = config.get("algorithm_logging", {}).get("enabled", False)
+        if not self.enabled:
+            return
+            
+        self.log_every_n = config.get("algorithm_logging", {}).get("log_every_n_calculations", 10)
+        self.max_age_days = config.get("algorithm_logging", {}).get("max_age_days", 30)
+        self.log_dir = Path(config.get("algorithm_logging", {}).get("log_directory", "data/algorithm_logs"))
+        
+        # Create log directory
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Counter for logging frequency
+        self.calculation_count = 0
+        
+        # Current log file
+        self.current_date = None
+        self.csv_file = None
+        self.csv_writer = None
+        
+        self.logger = logging.getLogger(f"{__name__}.AlgorithmLogger")
+        
+    def log_algorithm_calculation(self, timestamp: datetime, house_battery_soc: float, 
+                                 ev_battery_soc: float, original_load: float, 
+                                 modified_load: float, battery_priority_score: float,
+                                 charging_priority: str):
+        """Log algorithm calculation if enabled and due for logging"""
+        if not self.enabled:
+            return
+            
+        self.calculation_count += 1
+        
+        # Only log every N calculations
+        if self.calculation_count % self.log_every_n != 0:
+            return
+            
+        try:
+            # Check if we need a new file (new day)
+            current_date = timestamp.date()
+            if current_date != self.current_date:
+                self._rotate_log_file(current_date)
+            
+            # Write the log entry
+            load_difference = modified_load - original_load
+            
+            self.csv_writer.writerow([
+                timestamp.isoformat(),
+                house_battery_soc,
+                ev_battery_soc,
+                original_load,
+                modified_load,
+                load_difference,
+                battery_priority_score,
+                charging_priority
+            ])
+            
+            # Flush to ensure data is written
+            self.csv_file.flush()
+            
+            self.logger.debug(f"Logged algorithm calculation #{self.calculation_count}")
+            
+        except Exception as e:
+            self.logger.error(f"Error logging algorithm calculation: {e}")
+    
+    def _rotate_log_file(self, date):
+        """Rotate to a new log file for the given date"""
+        # Close current file if open
+        if self.csv_file:
+            self.csv_file.close()
+        
+        # Create new file for the date
+        filename = f"algorithm_log_{date.strftime('%Y-%m-%d')}.csv"
+        filepath = self.log_dir / filename
+        
+        # Open new file
+        file_exists = filepath.exists()
+        self.csv_file = open(filepath, 'a', newline='')
+        self.csv_writer = csv.writer(self.csv_file)
+        
+        # Write header if new file
+        if not file_exists:
+            self.csv_writer.writerow([
+                'timestamp',
+                'house_battery_soc',
+                'ev_battery_soc', 
+                'original_load',
+                'modified_load',
+                'load_difference',
+                'battery_priority_score',
+                'charging_priority'
+            ])
+        
+        self.current_date = date
+        self.logger.info(f"Rotated to new log file: {filepath}")
+        
+        # Clean up old files
+        self._cleanup_old_files()
+    
+    def _cleanup_old_files(self):
+        """Remove log files older than max_age_days"""
+        try:
+            cutoff_date = datetime.now().date() - timedelta(days=self.max_age_days)
+            
+            for file_path in self.log_dir.glob("algorithm_log_*.csv"):
+                try:
+                    # Extract date from filename
+                    date_str = file_path.stem.replace("algorithm_log_", "")
+                    file_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                    
+                    if file_date < cutoff_date:
+                        file_path.unlink()
+                        self.logger.info(f"Deleted old log file: {file_path}")
+                        
+                except (ValueError, OSError) as e:
+                    self.logger.warning(f"Could not process/delete file {file_path}: {e}")
+                    
+        except Exception as e:
+            self.logger.error(f"Error during log cleanup: {e}")
+    
+    def close(self):
+        """Close the current log file"""
+        if self.csv_file:
+            self.csv_file.close()
+            self.csv_file = None
+
+
 class MQTTInterceptor:
     """Main MQTT Interceptor service"""
     
@@ -81,6 +213,9 @@ class MQTTInterceptor:
         
         # Message buffers for different topics
         self.buffers: Dict[str, MessageBuffer] = {}
+        
+        # Algorithm logger
+        self.algorithm_logger = AlgorithmLogger(self.config)
         
         # Current state values
         self.current_values = {}
@@ -318,21 +453,40 @@ class MQTTInterceptor:
         """Calculate and publish modified load value for EVSE"""
         try:
             config = self.config["load_modification"]
+            timestamp = datetime.now()
             
             # Get current battery levels
             house_battery = self.house_battery_soc
             ev_battery = self.ev_battery_soc
             
             # Calculate combined battery priority (similar to Groovy logic)
-            battery = house_battery + (80 - ev_battery)
+            battery_priority_score = house_battery + (80 - ev_battery)
             
-            if battery > config["house_priority_threshold"]:
-                charge_mod = (battery - config["house_priority_threshold"]) * config["charge_modifier_multiplier"]
+            # Determine charging priority
+            if battery_priority_score > config["house_priority_threshold"]:
+                if ev_battery < house_battery:
+                    charging_priority = "EV_PRIORITY"
+                else:
+                    charging_priority = "HOUSE_PRIORITY"
+                    
+                charge_mod = (battery_priority_score - config["house_priority_threshold"]) * config["charge_modifier_multiplier"]
                 load_mod = config["load_modifier_base"] * charge_mod / 100.0
             else:
+                charging_priority = "BALANCED"
                 load_mod = 0.0
             
             modified_load = load_value - load_mod + config["load_modifier_base"]
+            
+            # Log algorithm calculation (only every N times based on config)
+            self.algorithm_logger.log_algorithm_calculation(
+                timestamp=timestamp,
+                house_battery_soc=house_battery,
+                ev_battery_soc=ev_battery,
+                original_load=load_value,
+                modified_load=modified_load,
+                battery_priority_score=battery_priority_score,
+                charging_priority=charging_priority
+            )
             
             # Publish modified load
             dest_topic = self.config["topics"]["destination"]["modified_load"]
@@ -341,8 +495,8 @@ class MQTTInterceptor:
                 
                 self.logger.debug(
                     f"Modified load: house_battery={house_battery}%, ev_battery={ev_battery}%, "
-                    f"battery={battery}, load={load_value}, load_mod={load_mod}, "
-                    f"modified_load={modified_load}"
+                    f"battery_priority={battery_priority_score}, load={load_value}W→{modified_load}W, "
+                    f"priority={charging_priority}"
                 )
         
         except Exception as e:
@@ -461,6 +615,9 @@ class MQTTInterceptor:
         
         if self.aggregation_thread and self.aggregation_thread.is_alive():
             self.aggregation_thread.join(timeout=5)
+        
+        # Close algorithm logger
+        self.algorithm_logger.close()
         
         self.logger.info("MQTT Interceptor service stopped")
 

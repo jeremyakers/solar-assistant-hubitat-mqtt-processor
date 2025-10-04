@@ -10,6 +10,7 @@ services:
     volumes:
       - ./config:/app/config:ro
       - ./logs:/app/logs
+      - ./data:/app/data
     
     # Environment variables (optional - can be set in config.yaml instead)
     environment:
