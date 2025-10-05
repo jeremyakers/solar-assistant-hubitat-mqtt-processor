@@ -278,7 +278,7 @@ class MQTTInterceptor:
                     "ev_battery_soc": "hubitat/ev_battery_soc"
                 },
                 "destination": {
-                    "aggregated_prefix": "solar_assistant_agg",
+                    "aggregated_suffix": "_agg",
                     "modified_load": "evse/modified_load"
                 }
             },
@@ -518,11 +518,12 @@ class MQTTInterceptor:
                 self.logger.error(f"Error in aggregation loop: {e}")
     
     def _publish_aggregated_data(self):
-        """Publish aggregated data to destination topics"""
+        """Publish aggregated data to destination topics with suffix approach"""
         try:
             with self.lock:
-                dest_prefix = self.config["topics"]["destination"]["aggregated_prefix"]
+                dest_suffix = self.config["topics"]["destination"]["aggregated_suffix"]
                 publish_individual = self.config["aggregation"]["publish_individual_topics"]
+                source_topics = self.config["topics"]["source"]
                 
                 aggregated_data = {}
                 
@@ -534,17 +535,32 @@ class MQTTInterceptor:
                     if stats["count"] > 0:
                         aggregated_data[topic_name] = stats
                         
-                        # Publish individual topic stats if enabled
-                        if publish_individual:
-                            topic_base = f"{dest_prefix}/{topic_name}"
-                            self.dest_client.publish(f"{topic_base}/min", stats["min"])
-                            self.dest_client.publish(f"{topic_base}/max", stats["max"])
-                            self.dest_client.publish(f"{topic_base}/avg", stats["avg"])
-                            self.dest_client.publish(f"{topic_base}/count", stats["count"])
+                        # Get original topic path and create aggregated version
+                        original_topic = source_topics.get(topic_name, "")
+                        if original_topic:
+                            # Extract base topic (first part before first slash)
+                            parts = original_topic.split("/", 1)
+                            if len(parts) >= 2:
+                                base_topic = parts[0]
+                                remaining_path = parts[1]
+                                aggregated_topic_base = f"{base_topic}{dest_suffix}/{remaining_path}"
+                            else:
+                                # No slash in topic, just add suffix
+                                aggregated_topic_base = f"{original_topic}{dest_suffix}"
+                            
+                            # Publish individual topic stats if enabled
+                            if publish_individual:
+                                self.dest_client.publish(f"{aggregated_topic_base}/min", stats["min"])
+                                self.dest_client.publish(f"{aggregated_topic_base}/max", stats["max"])
+                                self.dest_client.publish(f"{aggregated_topic_base}/avg", stats["avg"])
+                                self.dest_client.publish(f"{aggregated_topic_base}/count", stats["count"])
                 
-                # Publish combined aggregated data as JSON
-                if aggregated_data:
-                    combined_topic = f"{dest_prefix}/combined"
+                # Publish combined aggregated data as JSON (using first source topic base + suffix)
+                if aggregated_data and source_topics:
+                    # Use the first source topic to determine combined topic location
+                    first_topic = next(iter(source_topics.values()))
+                    base_topic = first_topic.split("/", 1)[0] if "/" in first_topic else first_topic
+                    combined_topic = f"{base_topic}{dest_suffix}/combined"
                     combined_payload = json.dumps(aggregated_data, indent=2)
                     self.dest_client.publish(combined_topic, combined_payload)
                     

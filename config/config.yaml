@@ -32,8 +32,8 @@ topics:
     ev_battery_soc: "hubitat/ev_battery_soc"
 
   destination:
-    # Where to publish aggregated data for Hubitat
-    aggregated_prefix: "solar_assistant_agg"
+    # Suffix to add to base topic for aggregated data (e.g., "_agg")
+    aggregated_suffix: "_agg"
     
     # Where to publish modified load for EVSE
     modified_load: "evse/modified_load"
