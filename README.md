@@ -69,6 +69,13 @@ The service:
 
 ## Configuration
 
+1. Copy the example configuration:
+   ```bash
+   cp config/config.example.yaml config/config.yaml
+   ```
+
+2. Edit `config/config.yaml` with your specific settings.
+
 The service is configured via `config/config.yaml`. Key sections:
 
 ### MQTT Brokers

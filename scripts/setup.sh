@@ -24,16 +24,23 @@ fi
 echo "Creating directories..."
 mkdir -p config
 mkdir -p logs
+mkdir -p data
 
 # Set permissions
 chmod 755 config
 chmod 755 logs
+chmod 755 data
 
-# Check if config file exists
+# Copy example config if config.yaml doesn't exist
 if [ ! -f "config/config.yaml" ]; then
-    echo "Warning: config/config.yaml not found."
-    echo "The application will create a default config file on first run."
-    echo "You'll need to edit it with your MQTT broker details."
+    if [ -f "config/config.example.yaml" ]; then
+        cp config/config.example.yaml config/config.yaml
+        echo "Created config/config.yaml from example template"
+    else
+        echo "Warning: config/config.example.yaml not found."
+        echo "The application will create a default config file on first run."
+    fi
+    echo "You'll need to edit config/config.yaml with your MQTT broker details."
 fi
 
 # Build the Docker image
