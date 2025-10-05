@@ -27,6 +27,8 @@ import yaml
 
 import paho.mqtt.client as mqtt
 
+# Version information
+VERSION = '1.2.0'
 
 @dataclass
 class MessageBuffer:
@@ -309,13 +311,30 @@ class MQTTInterceptor:
         print("Please edit the configuration file with your MQTT broker details and topic names.")
     
     def setup_logging(self):
-        """Setup logging configuration"""
+        """Setup logging configuration with file output"""
         log_config = self.config.get("logging", {})
         level = getattr(logging, log_config.get("level", "INFO").upper())
         format_str = log_config.get("format", "%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         
-        logging.basicConfig(level=level, format=format_str)
+        # Create logs directory
+        log_dir = Path("logs")
+        log_dir.mkdir(exist_ok=True)
+        
+        # Setup logging to both file and console
+        logging.basicConfig(
+            level=level,
+            format=format_str,
+            handlers=[
+                logging.FileHandler(log_dir / "mqtt_interceptor.log"),
+                logging.StreamHandler()  # This goes to Docker logs
+            ]
+        )
         self.logger = logging.getLogger(__name__)
+        
+        # Log version information on startup
+        self.logger.info(f"MQTT Interceptor v{VERSION} starting up")
+        self.logger.info(f"Python version: {sys.version}")
+        self.logger.info(f"Log level: {logging.getLevelName(level)}")
     
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals"""
