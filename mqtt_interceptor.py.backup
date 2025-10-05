@@ -450,38 +450,41 @@ class MQTTInterceptor:
         return None
     
     def _calculate_and_publish_modified_load(self, load_value: float):
-        """Calculate and publish modified load value for EVSE (matches original Groovy logic exactly)"""
+        """Calculate and publish modified load value for EVSE"""
         try:
             config = self.config["load_modification"]
             timestamp = datetime.now()
             
-            # Get current battery levels (matching Groovy variable names)
-            mybattery = self.house_battery_soc
+            # Get current battery levels
+            house_battery = self.house_battery_soc
             ev_battery = self.ev_battery_soc
             
-            # Calculate combined battery score (exact Groovy logic)
-            battery = mybattery + (80 - ev_battery)
+            # Calculate combined battery priority (similar to Groovy logic)
+            battery_priority_score = house_battery + (80 - ev_battery)
             
-            # Apply load modification (exact Groovy logic)
-            if battery > 50:
-                chargemod = (battery - 50) * 2
-                loadmod = 10000.0 * chargemod / 100.0
-                charging_priority = "ACTIVE_MODIFICATION"
+            # Determine charging priority
+            if battery_priority_score > config["house_priority_threshold"]:
+                if ev_battery < house_battery:
+                    charging_priority = "EV_PRIORITY"
+                else:
+                    charging_priority = "HOUSE_PRIORITY"
+                    
+                charge_mod = (battery_priority_score - config["house_priority_threshold"]) * config["charge_modifier_multiplier"]
+                load_mod = config["load_modifier_base"] * charge_mod / 100.0
             else:
-                loadmod = 0.0
-                charging_priority = "NO_MODIFICATION"
+                charging_priority = "BALANCED"
+                load_mod = 0.0
             
-            # Calculate modified load (exact Groovy formula)
-            modified_load = load_value - loadmod + 10000
+            modified_load = load_value - load_mod + config["load_modifier_base"]
             
             # Log algorithm calculation (only every N times based on config)
             self.algorithm_logger.log_algorithm_calculation(
                 timestamp=timestamp,
-                house_battery_soc=mybattery,
+                house_battery_soc=house_battery,
                 ev_battery_soc=ev_battery,
                 original_load=load_value,
                 modified_load=modified_load,
-                battery_priority_score=battery,
+                battery_priority_score=battery_priority_score,
                 charging_priority=charging_priority
             )
             
@@ -491,9 +494,9 @@ class MQTTInterceptor:
                 self.dest_client.publish(dest_topic, str(modified_load))
                 
                 self.logger.debug(
-                    f"Modified load: house_battery={mybattery}%, ev_battery={ev_battery}%, "
-                    f"battery_score={battery}, load={load_value}W→{modified_load}W, "
-                    f"chargemod={chargemod}, loadmod={loadmod}, priority={charging_priority}"
+                    f"Modified load: house_battery={house_battery}%, ev_battery={ev_battery}%, "
+                    f"battery_priority={battery_priority_score}, load={load_value}W→{modified_load}W, "
+                    f"priority={charging_priority}"
                 )
         
         except Exception as e:
