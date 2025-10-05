@@ -1,0 +1,45 @@
+services:
+  mqtt-interceptor:
+    image: python:3.11-slim
+    container_name: mqtt-interceptor
+    restart: unless-stopped
+    
+    # Mount config and code directories
+    volumes:
+      - ./config:/app/config:ro
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - .:/app/code:ro
+    
+    # Working directory
+    working_dir: /app/code
+    
+    # Install dependencies and run
+    command: >
+      sh -c "pip install -r requirements.txt && 
+             python mqtt_interceptor.py --config /app/config/config.yaml"
+    
+    # Environment variables
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=America/New_York
+    
+    # Network mode
+    network_mode: host
+    
+    # Resource limits (adjust as needed)
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.5'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

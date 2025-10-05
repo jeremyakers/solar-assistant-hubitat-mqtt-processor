@@ -1,0 +1,20 @@
+services:
+  mqtt-interceptor:
+    image: python:3.11-slim
+    container_name: mqtt-interceptor
+    restart: unless-stopped
+    
+    volumes:
+      - ./:/app
+    
+    working_dir: /app
+    
+    command: >
+      sh -c "pip install --no-cache-dir -r requirements.txt && 
+             python mqtt_interceptor.py --config config/config.yaml"
+    
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=America/New_York
+    
+    network_mode: host
