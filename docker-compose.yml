@@ -3,7 +3,7 @@ services:
     build: 
       context: .
       args:
-        - BUILD_VERSION=1.2.0
+        - BUILD_VERSION=1.2.1
     container_name: mqtt-interceptor
     restart: unless-stopped
     

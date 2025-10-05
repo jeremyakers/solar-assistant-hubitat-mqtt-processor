@@ -28,7 +28,7 @@ import yaml
 import paho.mqtt.client as mqtt
 
 # Version information
-VERSION = '1.2.0'
+VERSION = '1.2.1'
 
 @dataclass
 class MessageBuffer:
